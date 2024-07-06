@@ -2,46 +2,22 @@
 """
 Entry point for the REST API
 """
-from os import getenv
-from flask import Flask, jsonify
-from flask_cors import CORS
-from api.v1.views import app_views
-from api.models import init_db
-from uuid import uuid4
 
-app = Flask(__name__)
-app.config['SECRET_KEY'] = getenv('ADN_SECRET_KEY', 'foobar')
-app.url_map.strict_slashes = False
-app.register_blueprint(app_views)
-CORS(app, resources={r"/api/v1/*": {"origins": "*"}})
-CORS_ORIGIN_ALLOW_ALL = True
-init_db()
+from api.models.models import User, Organisation
+from api import create_app, db
+#from api.v1.views import app_views
+from flask_jwt_extended import JWTManager
+from api.v1.views import auth_views
 
+app = create_app()
+app.config["JWT_SECRET_KEY"] = "super-secret"  # change using os.getenv!
+jwt = JWTManager(app)
 
-@app.errorhandler(400)
-def bad_request(error):
-    return jsonify({"error": error.description}), 400
+# app.register_blueprint(app_views)
+app.register_blueprint(auth_views)
 
-
-@app.errorhandler(401)
-def unauthorized(error):
-    return jsonify({"message": "Unauthorized"}), 401
-
-
-@app.errorhandler(403)
-def forbidden(error):
-    return jsonify({"message": "Forbidden"}), 403
-
-
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({"message": "Not found"}), 404
-
-
-@app.errorhandler(500)
-def server_error(error):
-    return jsonify({"message": "Server error"}), 500
-
+with app.app_context():
+    db.create_all()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
