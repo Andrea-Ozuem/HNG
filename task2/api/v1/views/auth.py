@@ -13,7 +13,7 @@ from api.v1.views import auth_views
 @auth_views.route('/register', methods=['POST'], strict_slashes=False)
 def register():
     'Registers a user'
-    payload = request.form
+    payload = request.get_json()
 
     #validation
     errors = []
@@ -32,30 +32,29 @@ def register():
         return jsonify({"errors": errors}), 422
     
     #register user & create Org
-    try:
-        user = User(email = email)
-        user.first_name = payload.get("firstName")
-        user.last_name = payload.get("lastName")
-        user.hash_password(payload.get("password"))
-        print(user.password)
-        user.phone = payload.get("phone")
-        org_name = "{}'s Organisation".format(user.first_name)
-        org = Organisation(name = org_name)
-        user.user_orgs.append(org)
+    #try:
+    user = User(email = email)
+    user.first_name = payload.get("firstName")
+    user.last_name = payload.get("lastName")
+    user.hash_password(payload.get("password"))
+    user.phone = payload.get("phone")
+    org_name = "{}'s Organisation".format(user.first_name)
+    org = Organisation(name = org_name)
+    user.orgs.append(org)
 
-        # save user to db
-        db.session.add(user)
-        db.session.add(org)
-        db.session.commit()
+    # save user to db
+    db.session.add(user)
+    db.session.add(org)
+    db.session.commit()
 
-        # create access_token
-        access_token = create_access_token(identity=user.id)
-    except Exception:
+    # create access_token
+    access_token = create_access_token(identity=user.id)
+    """     except Exception:
         return jsonify({
             "status": "Bad request",
             "message": "Registration unsuccessful",
             "statusCode": 400
-    })
+        }), 400 """
 
     return jsonify({
         'status': 'success',
