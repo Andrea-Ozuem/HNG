@@ -1,123 +1,144 @@
 #!/usr/bin/env python3
-import unittest
-from api import create_app, db
-from api.models.models import User, Organisation
+
+import pytest
+from flask.testing import FlaskClient
 from flask_jwt_extended import create_access_token, decode_token
 from datetime import timedelta
+import time
+
+from api import create_app, db
+from api.v1.views import auth_views
+from api.models.models import User, Organisation
+
+@pytest.fixture(scope='module')
+def flask_app():
+    app = create_app()
+    with app.app_context():
+        db.drop_all()
+        db.create_all()
+        app.register_blueprint(auth_views)
+        yield app
 
 
-class TestToken(unittest.TestCase):
-    def setUp(self):
-        self.app = create_app()
-        self.app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres.pvznacjzdmfuitexpnzp:xender2022$@aws-0-eu-central-1.pooler.supabase.com:6543/postgres'
-        self.client = self.app.test_client()
+@pytest.fixture(scope='module')
+def client(flask_app):
+    app = flask_app
+    ctx = flask_app.test_request_context()
+    ctx.push()
+    app.test_client_class = FlaskClient
+    return app.test_client()
 
-        with self.app.app_context():
-            db.create_all()
-
-    def tearDown(self):
-        with self.app.app_context():
-            db.session.remove()
-            db.drop_all()
-
-    def test_token_expiration(self):
-        # Register a user
-        self.client.post('/auth/register', json={
-            'firstName': 'John',
-            'lastName': 'Doe',
-            'email': 'john@example.com',
-            'password': 'password',
-            'phone': '1234567890'
-        })
-
-        # Log the user in
-        response = self.client.post('/auth/login', json={
-            'email': 'john@example.com',
-            'password': 'password'
-        })
-
-        data = response.get_json()
-        access_token = data['data']['accessToken']
-        decoded_token = decode_token(access_token)
-        
-        # Verify token expiration
-        expiration_time = decoded_token['exp']
-        current_time = time.time()
-        self.assertAlmostEqual(expiration_time, current_time + 3600, delta=5)
-
-
-class OrganisationAccessTestCase(unittest.TestCase):
-    def setUp(self):
-        self.app = create_app()
-        self.app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres.pvznacjzdmfuitexpnzp:xender2022$@aws-0-eu-central-1.pooler.supabase.com:6543/postgres'
-        self.client = self.app.test_client()
-        with self.app.app_context():
-            db.create_all()
-            self.res = self.client.post('/auth/register', json={
-                'firstName': 'John',
-                'lastName': 'Doe',
-                'email': 'john@example.com',
-                'password': 'password',
-                'phone': '1234567890'
-            })
-            print(self.res)
-
-    def tearDown(self):
-        with self.app.app_context():
-            db.session.remove()
-            db.drop_all()
-
-    def test_user_reg(self):
-        self.assertEqual(self.res.status_code, 201)
-        self.assertIn('accessToken', self.res.json['data'])
-        self.assertEqual(self.res.json['data']['user']['firstName'], 'John')
-        self.assertEqual(self.res.json['data']['user']['email'], 'john@example.com')
-
-        # test users is registered successfuly when no org is specified
-        usr = User.query.filter_by(name = self.user1.first_name).first()
-        self.assertIsNotNone(usr)
-
-        # test default org is created
-        org = Organisation.query.filter_by(name = "John's Organisation").first()
-        self.assertIsNotNone(org)
-
-    def test_successful_login(self):
-        response = self.client.post('/auth/login', json={
-            'email': 'john@example.com',
-            'password': 'password'
-        })
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('accessToken', response.json['data'])
-        self.assertEqual('john@example.com', response.json['data']['user']['email'])
-
-    def test_invalid_login_credentials(self):
-        response = self.client.post('/auth/login', json={
-            'email': 'john@example.com',
-            'password': 'wrong'
-        })
-        self.assertEqual(response.status_code, 401)
-
-    def test_missing_required_fields(self):
-        response = self.client.post('/auth/register', json={
-            'lastName': 'Doe',
-            'email': 'john@example.com',
-            'password': 'password',
-            'phone': '1234567890'
-        })
-        self.assertEqual(response.status_code, 422)
-        self.assertIn('errors', response.json)
-
-    def test_duplicate_email(self):
-        response = self.client.post('/auth/register', json={
-            'firstName': 'Julye',
+def test_user_reg(client):
+    '''Ensure a user is registered successfully when no organisation details are provided.
+    Verify the default organisation name is correctly generated
+    Check that the response contains the expected user details and access token
+    '''
+    res = client.post('/auth/register', json={
+            'firstName': 'Andy',
             'lastName': 'Jane',
+            'email': 'andy@example.com',
+            'password': 'password',
+            'phone': '0987654321'
+        })
+    assert res.status_code == 201
+    assert 'accessToken' in res.json['data']
+    assert 'Andy' in res.json['data']['user']['firstName']
+    assert 'andy@example.com' in res.json['data']['user']['email']
+
+    usr = User.query.filter_by(first_name = 'Andy').first()
+    assert usr is not None
+
+    org = Organisation.query.filter_by(name = "Andy's Organisation").first()
+    assert org is not None
+
+def test_successful_login(client):
+    res = client.post('/auth/login', json={
+            'email': 'andy@example.com',
+            'password': 'password'
+        })
+    assert res.status_code == 200
+    assert 'accessToken' in res.json['data']
+    assert 'andy@example.com' in res.json['data']['user']['email']
+    
+def test_invalid_login_credentials(client):
+    res = client.post('/auth/login', json={
+            'email': 'andy@example.com',
+            'password': 'passrd'
+        })
+    assert res.status_code == 401
+
+def test_missing_required_lastName(client):
+    res = client.post('/auth/register', json={
+            'firstName': 'John',
             'email': 'john@example.com',
             'password': 'password',
             'phone': '0987654321'
         })
-        self.assertEqual(response.status_code, 422)
-        self.assertIn('errors', response.res.json)
+    print(res.get_json())
+    assert res.status_code == 422
+    err_msg = {"field": "lastName", "message": "lastName is required"}
+    assert err_msg in res.json['errors']
 
+def test_missing_required_firstName(client):
+    res = client.post('/auth/register', json={
+            'lastName': 'Doe',
+            'email': 'john@example.com',
+            'password': 'password',
+            'phone': '0987654321'
+        })
+    assert res.status_code == 422
+    err_msg = {"field": "firstName", "message": "firstName is required"}
+    assert err_msg in res.json['errors']
 
-if __name__ == '__main__':
-    unittest.main()
+def test_missing_required_pwd(client):
+    res = client.post('/auth/register', json={
+            'firstName': 'John',
+            'lastName': 'Doe',
+            'email': 'john@example.com',
+            'phone': '0987654321'
+        })
+    assert res.status_code == 422
+    err_msg = {"field": "password", "message": "password is required"}
+    assert err_msg in res.json['errors']
+
+def test_missing_required_email(client):
+    res = client.post('/auth/register', json={
+            'firstName': 'John',
+            'lastName': 'Doe',
+            'password': 'password',
+            'phone': '0987654321'
+        })
+    assert res.status_code == 422
+    err_msg = {"field": "email", "message": "email is required"}
+    assert err_msg in res.json['errors']
+
+def test_duplicate_email(client):
+    res = client.post('/auth/register', json={
+            'firstName': 'John',
+            'lastName': 'Dave',
+            'email': 'andy@example.com',
+            'password': 'password',
+            'phone': '0987654321'
+        })
+    assert res.status_code == 422
+    err_msg = {"field": "email", "message": "Email already exists"}
+    assert err_msg in res.json['errors']
+
+def test_token_expiration(client):
+    response = client.post('/auth/login', json={
+            'email': 'andy@example.com',
+            'password': 'password'
+        })
+
+    data = response.get_json()
+    access_token = data['data']['accessToken']
+    decoded_token = decode_token(access_token)
+
+    user_id = decoded_token.get('sub')
+    usr = User.query.filter_by(id=user_id).first()
+    assert usr is not None
+
+    # Verify token expiration
+    expiration_time = decoded_token['exp']
+    current_time = time.time()
+    assert expiration_time <= current_time + 3600

@@ -82,7 +82,7 @@ def login():
             "status": "Bad request",
             "message": "Authentication failed",
             "statusCode": 401
-    })
+    }), 401
 
     user = User.query.filter_by(email=data.get('email')).first()
     if user and user.verify_password(data.get('password')):
@@ -106,4 +106,4 @@ def login():
         "status": "Bad request",
         "message": "Authentication failed",
         "statusCode": 401
-    })
+    }), 401
